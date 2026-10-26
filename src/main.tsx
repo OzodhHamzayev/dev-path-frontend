@@ -59,6 +59,48 @@ type State = {
   user: string;
   theme: string;
 };
+const AUTH_TOKEN_KEY = "token";
+const AUTH_USER_KEY = "devpath-auth-user";
+
+function tokenIsUsable(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3) return true;
+  try {
+    const payloadPart = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadPart.padEnd(
+      payloadPart.length + ((4 - (payloadPart.length % 4)) % 4),
+      "=",
+    );
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof payload.exp !== "number" || payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function findLoginValue(
+  value: unknown,
+  keys: string[],
+  depth = 0,
+): string | undefined {
+  if (depth > 4 || !value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const found = record[key];
+    if (typeof found === "string" && found.trim()) return found.trim();
+  }
+  for (const nested of Object.values(record)) {
+    const found = findLoginValue(nested, keys, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
 const initial: State = {
   saved: [],
   enrolled: [],
@@ -69,11 +111,18 @@ const initial: State = {
 function readState(): State {
   try {
     const s = JSON.parse(localStorage.getItem("devpath") || "null");
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const user = localStorage.getItem(AUTH_USER_KEY) || "";
+    if (token && !tokenIsUsable(token)) clearStoredAuth();
     return s &&
       Array.isArray(s.saved) &&
       Array.isArray(s.enrolled) &&
       typeof s.progress === "object"
-      ? { ...initial, ...s }
+      ? {
+          ...initial,
+          ...s,
+          user: token && tokenIsUsable(token) ? user || s.user || "" : "",
+        }
       : initial;
   } catch {
     return initial;
@@ -96,6 +145,7 @@ function AppContent() {
   const [state, set] = useState(readState);
   const [message, toast] = useState("");
   const location = useLocation();
+  const nav = useNavigate();
   useEffect(() => {
     localStorage.setItem("devpath", JSON.stringify(state));
     document.documentElement.dataset.theme = state.theme;
@@ -109,6 +159,17 @@ function AppContent() {
       return () => clearTimeout(t);
     }
   }, [message]);
+  useEffect(() => {
+    function expireSession() {
+      clearStoredAuth();
+      set((current) => ({ ...current, user: "" }));
+      toast("Your session expired. Please log in again.");
+      nav("/signin");
+    }
+    window.addEventListener("devpath-auth-expired", expireSession);
+    return () =>
+      window.removeEventListener("devpath-auth-expired", expireSession);
+  }, [nav]);
   return (
     <Context.Provider value={{ state, set, toast }}>
       <Header />
@@ -1180,6 +1241,7 @@ function Curriculum({
 function Dashboard() {
   const courses = usePublishedCourses();
   const { state, set, toast } = useApp();
+  const nav = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState("overview");
   const enrolled = courses.filter((c) => state.enrolled.includes(c.id));
@@ -1229,8 +1291,10 @@ function Dashboard() {
           {state.user && (
             <button
               onClick={() => {
+                clearStoredAuth();
                 set((s) => ({ ...s, user: "" }));
-                toast("Signed out of your demo session");
+                toast("You have been logged out.");
+                nav("/signin");
               }}
             >
               <LogOut size={17} /> Log out
@@ -1597,9 +1661,10 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { set, toast } = useApp();
-  const nav = useNavigate();<form onSubmit={submit} noValidate></form>
+  const nav = useNavigate();
   async function submit(e: React.FormEvent) {
   e.preventDefault();
 
@@ -1621,6 +1686,7 @@ function Auth({ signup = false }: { signup?: boolean }) {
   if (Object.keys(next).length > 0) return;
 
 if (!signup) {
+  setSubmitting(true);
   try {
     const response = await fetch(
       "http://localhost:8080/api/auth/login",
@@ -1631,16 +1697,45 @@ if (!signup) {
       }
     );
 
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+
     if (!response.ok) {
-      setErrors({ submit: "Login amalga oshmadi." });
+      const detail = findLoginValue(body, ["error", "message"]);
+      setErrors({ submit: detail || "Login amalga oshmadi." });
       return;
     }
 
-  set((s) => ({ ...s, user: email.split("@")[0] }));
-  setPassword("");
-  nav("/dashboard");
+    const token = findLoginValue(body, [
+      "token",
+      "accessToken",
+      "access_token",
+      "jwt",
+    ]);
+    if (!token) {
+      setErrors({
+        submit: "Backend login javobida token topilmadi.",
+      });
+      return;
+    }
+    const displayName =
+      findLoginValue(body, ["name", "username", "fullName"]) ||
+      email.split("@")[0];
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_USER_KEY, displayName);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    window.dispatchEvent(new Event("devpath-auth-changed"));
+    set((s) => ({ ...s, user: displayName }));
+    setPassword("");
+    nav("/dashboard");
   } catch {
     setErrors({ submit: "Backendga ulanib bo‘lmadi." });
+  } finally {
+    setSubmitting(false);
   }
 
   return;
@@ -1773,20 +1868,24 @@ if (!signup) {
               </small>
             )}
           </label>
-          <button className="button primary full" type="submit">
-            {signup ? "Sign in" : "Log in"}{" "}
+          <button
+            className="button primary full"
+            type="submit"
+            disabled={submitting}
+          >
+            {submitting
+              ? "Logging in…"
+              : signup
+                ? "Create account"
+                : "Log in"}{" "}
             <ArrowRight size={17} />
           </button>
         </form>
         <p className="auth-switch">
           {signup ? "Already exploring?" : "New around here?"}{" "}
           <Link to={signup ? "/signin" : "/signup"}>
-            {signup ? "Log in" : "Sign in"}
+            {signup ? "Log in" : "Create account"}
           </Link>
-        </p>
-        <p className="demo-note">
-          No payment, email verification, or real credentials needed. Use a
-          made-up password.
         </p>
       </div>
     </section>

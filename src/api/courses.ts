@@ -34,10 +34,24 @@ function object(value: unknown): JsonObject | undefined {
 function readToken(key: string) {
   // Use an existing login token; this client never manufactures authentication.
   try {
-    const value = sessionStorage.getItem(key) || localStorage.getItem(key);
+    const value = localStorage.getItem(key) || sessionStorage.getItem(key);
     return value?.trim() || null;
   } catch {
     return null;
+  }
+}
+
+function expireStoredToken(
+  response: Response,
+  config: ReturnType<typeof getConfig>,
+) {
+  if (response.status !== 401 || !readToken(config.tokenKey)) return;
+  try {
+    localStorage.removeItem(config.tokenKey);
+    localStorage.removeItem("devpath-auth-user");
+    sessionStorage.removeItem(config.tokenKey);
+  } finally {
+    window.dispatchEvent(new Event("devpath-auth-expired"));
   }
 }
 
@@ -186,6 +200,7 @@ export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
       "Could not load courses from the backend. Check that it is running and allows this frontend origin through CORS.",
     );
   }
+  expireStoredToken(response, config);
 
   let body: unknown;
   let validJson = true;
@@ -253,6 +268,7 @@ export async function createCourse(
       "Could not connect to the backend. Check that it is running on the configured port and allows this frontend origin through CORS.",
     );
   }
+  expireStoredToken(response, config);
 
   let body: unknown;
   try {
@@ -289,6 +305,7 @@ export async function updateCourseInApi(
       "Could not connect to the backend. Check that it is running and allows this frontend origin through CORS.",
     );
   }
+  expireStoredToken(response, config);
 
   let body: unknown;
   try {
@@ -316,6 +333,7 @@ export async function deleteCourseFromApi(id: string): Promise<void> {
       "Could not connect to the backend. Check that it is running and allows this frontend origin through CORS.",
     );
   }
+  expireStoredToken(response, config);
 
   let body: unknown;
   try {

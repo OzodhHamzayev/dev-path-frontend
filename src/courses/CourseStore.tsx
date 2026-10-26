@@ -119,6 +119,15 @@ export function CourseProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    function reloadAfterLogin() {
+      void refreshCourses();
+    }
+    window.addEventListener("devpath-auth-changed", reloadAfterLogin);
+    return () =>
+      window.removeEventListener("devpath-auth-changed", reloadAfterLogin);
+  }, []);
+
+  useEffect(() => {
     function sync(event: StorageEvent) {
       if (event.key !== COURSE_STORAGE_KEY && event.key !== null) return;
       const parsed = parseCourses(event.newValue);
