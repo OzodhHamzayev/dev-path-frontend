@@ -1096,9 +1096,6 @@ function Details() {
                   Lifetime demo access
                 </li>
               </ul>
-              <p className="demo-note">
-                Demo enrollment — no payment required or collected.
-              </p>
             </div>
           </aside>
         </div>
