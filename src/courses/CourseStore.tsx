@@ -22,6 +22,15 @@ export const categories = [
 ];
 export const levels = ["Beginner", "Intermediate", "Advanced"];
 export const coverColors = ["blue", "sage", "purple", "gold", "coral"];
+const AUTH_ROLE_KEY = "devpath-auth-role";
+
+function hasAdminSession() {
+  try {
+    return localStorage.getItem(AUTH_ROLE_KEY) === "admin";
+  } catch {
+    return false;
+  }
+}
 
 function isCourse(value: unknown): value is ManagedCourse {
   if (!value || typeof value !== "object") return false;
@@ -83,6 +92,12 @@ export function CourseProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    if (!hasAdminSession()) {
+      setIsLoading(false);
+      return () => {
+        active = false;
+      };
+    }
     async function load() {
       setIsLoading(true);
       try {
@@ -120,7 +135,7 @@ export function CourseProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function reloadAfterLogin() {
-      void refreshCourses();
+      if (hasAdminSession()) void refreshCourses();
     }
     window.addEventListener("devpath-auth-changed", reloadAfterLogin);
     return () =>
