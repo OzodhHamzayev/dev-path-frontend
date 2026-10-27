@@ -63,3 +63,36 @@ test("login persists the token and restores the user after remount", async () =>
     screen.getByRole("heading", { name: "Welcome back, Alex." }),
   ).toBeTruthy();
 });
+
+function storeSession(role: "user" | "admin") {
+  localStorage.setItem("token", "test-token");
+  localStorage.setItem("devpath-auth-user", "Alex Morgan");
+  localStorage.setItem("devpath-auth-role", role);
+  localStorage.setItem(
+    "devpath",
+    JSON.stringify({
+      saved: [],
+      enrolled: [],
+      progress: {},
+      user: "Alex Morgan",
+      role,
+      theme: "midnight",
+    }),
+  );
+}
+
+test("blocks a signed-in non-admin from the admin workspace", () => {
+  storeSession("user");
+  open("/admin");
+  expect(
+    screen.getByRole("heading", { name: "Admin access required." }),
+  ).toBeTruthy();
+});
+
+test("allows a signed-in admin into the admin workspace", async () => {
+  storeSession("admin");
+  open("/admin");
+  expect(
+    await screen.findByRole("heading", { name: "Your course library." }),
+  ).toBeTruthy();
+});

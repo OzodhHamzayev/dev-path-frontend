@@ -49,6 +49,7 @@ function expireStoredToken(
   try {
     localStorage.removeItem(config.tokenKey);
     localStorage.removeItem("devpath-auth-user");
+    localStorage.removeItem("devpath-auth-role");
     sessionStorage.removeItem(config.tokenKey);
   } finally {
     window.dispatchEvent(new Event("devpath-auth-expired"));

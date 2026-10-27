@@ -8,6 +8,7 @@ import {
   useNavigate,
   useParams,
   useLocation,
+  Navigate,
 } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -57,10 +58,12 @@ type State = {
   enrolled: string[];
   progress: Record<string, number[]>;
   user: string;
+  role: "user" | "admin" | "";
   theme: string;
 };
 const AUTH_TOKEN_KEY = "token";
 const AUTH_USER_KEY = "devpath-auth-user";
+const AUTH_ROLE_KEY = "devpath-auth-role";
 
 function tokenIsUsable(token: string) {
   const parts = token.split(".");
@@ -81,7 +84,28 @@ function tokenIsUsable(token: string) {
 function clearStoredAuth() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
+  localStorage.removeItem(AUTH_ROLE_KEY);
   sessionStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function normalizeRole(value: unknown): State["role"] {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase() === "admin" ? "admin" : "user";
+}
+
+function readJwtValue(token: string, keys: string[]): string | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const payloadPart = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadPart.padEnd(
+      payloadPart.length + ((4 - (payloadPart.length % 4)) % 4),
+      "=",
+    );
+    return findLoginValue(JSON.parse(atob(padded)), keys);
+  } catch {
+    return undefined;
+  }
 }
 
 function findLoginValue(
@@ -106,6 +130,7 @@ const initial: State = {
   enrolled: [],
   progress: {},
   user: "",
+  role: "",
   theme: "midnight",
 };
 function readState(): State {
@@ -113,6 +138,9 @@ function readState(): State {
     const s = JSON.parse(localStorage.getItem("devpath") || "null");
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     const user = localStorage.getItem(AUTH_USER_KEY) || "";
+    const role = normalizeRole(
+      localStorage.getItem(AUTH_ROLE_KEY) || s?.role,
+    );
     if (token && !tokenIsUsable(token)) clearStoredAuth();
     return s &&
       Array.isArray(s.saved) &&
@@ -122,6 +150,7 @@ function readState(): State {
           ...initial,
           ...s,
           user: token && tokenIsUsable(token) ? user || s.user || "" : "",
+          role: token && tokenIsUsable(token) ? role : "",
         }
       : initial;
   } catch {
@@ -134,6 +163,39 @@ const Context = createContext<{
   toast: (s: string) => void;
 }>({ state: initial, set: () => {}, toast: () => {} });
 const useApp = () => useContext(Context);
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { state } = useApp();
+  const location = useLocation();
+  let token = "";
+  try {
+    token =
+      localStorage.getItem(AUTH_TOKEN_KEY) ||
+      sessionStorage.getItem(AUTH_TOKEN_KEY) ||
+      "";
+  } catch {
+    token = "";
+  }
+
+  if (!state.user || !token || !tokenIsUsable(token)) {
+    return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
+  }
+
+  if (state.role !== "admin") {
+    return (
+      <div className="container empty">
+        <ShieldCheck size={38} />
+        <h1>Admin access required.</h1>
+        <p>Your account does not have permission to manage courses.</p>
+        <Link className="button primary" to="/dashboard">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
 export function App() {
   return (
     <CourseProvider>
@@ -162,7 +224,7 @@ function AppContent() {
   useEffect(() => {
     function expireSession() {
       clearStoredAuth();
-      set((current) => ({ ...current, user: "" }));
+      set((current) => ({ ...current, user: "", role: "" }));
       toast("Your session expired. Please log in again.");
       nav("/signin");
     }
@@ -185,24 +247,40 @@ function AppContent() {
           <Route
             path="/admin"
             element={
-              <AdminCourses
-                onDeleteCourse={(id) => {
-                  set((s) => {
-                    const progress = { ...s.progress };
-                    delete progress[id];
-                    return {
-                      ...s,
-                      saved: s.saved.filter((x) => x !== id),
-                      enrolled: s.enrolled.filter((x) => x !== id),
-                      progress,
-                    };
-                  });
-                }}
-              />
+              <AdminGuard>
+                <AdminCourses
+                  onDeleteCourse={(id) => {
+                    set((s) => {
+                      const progress = { ...s.progress };
+                      delete progress[id];
+                      return {
+                        ...s,
+                        saved: s.saved.filter((x) => x !== id),
+                        enrolled: s.enrolled.filter((x) => x !== id),
+                        progress,
+                      };
+                    });
+                  }}
+                />
+              </AdminGuard>
             }
           />
-          <Route path="/admin/courses/new" element={<CourseEditor />} />
-          <Route path="/admin/courses/:id/edit" element={<CourseEditor />} />
+          <Route
+            path="/admin/courses/new"
+            element={
+              <AdminGuard>
+                <CourseEditor />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/courses/:id/edit"
+            element={
+              <AdminGuard>
+                <CourseEditor />
+              </AdminGuard>
+            }
+          />
           <Route
             path="*"
             element={
@@ -253,7 +331,7 @@ function Header() {
         <nav className="desktop-nav">
           <NavLink to="/courses">Explore Courses</NavLink>
           <NavLink to="/dashboard">My Learning</NavLink>
-          <NavLink to="/admin">Admin</NavLink>
+          {state.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <form
           className="nav-search"
@@ -318,8 +396,10 @@ function Header() {
         <nav className="mobile-nav">
           <Link to="/courses">Explore Courses</Link>
           <Link to="/dashboard">My Learning</Link>
-          <Link to="/admin">Admin workspace</Link>
-          <Link to="/signin">Demo sign in</Link>
+          {state.role === "admin" && (
+            <Link to="/admin">Admin workspace</Link>
+          )}
+          {!state.user && <Link to="/signin">Log in</Link>}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1292,7 +1372,7 @@ function Dashboard() {
             <button
               onClick={() => {
                 clearStoredAuth();
-                set((s) => ({ ...s, user: "" }));
+                set((s) => ({ ...s, user: "", role: "" }));
                 toast("You have been logged out.");
                 nav("/signin");
               }}
@@ -1725,13 +1805,17 @@ if (!signup) {
     const displayName =
       findLoginValue(body, ["name", "username", "fullName"]) ||
       email.split("@")[0];
+    const role = normalizeRole(
+      findLoginValue(body, ["role"]) || readJwtValue(token, ["role"]),
+    );
     localStorage.setItem(AUTH_TOKEN_KEY, token);
     localStorage.setItem(AUTH_USER_KEY, displayName);
+    localStorage.setItem(AUTH_ROLE_KEY, role || "user");
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event("devpath-auth-changed"));
-    set((s) => ({ ...s, user: displayName }));
+    set((s) => ({ ...s, user: displayName, role: role || "user" }));
     setPassword("");
-    nav("/dashboard");
+    nav(role === "admin" ? "/admin" : "/dashboard");
   } catch {
     setErrors({ submit: "Backendga ulanib bo‘lmadi." });
   } finally {
