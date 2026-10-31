@@ -189,11 +189,15 @@ function mapApiCourse(value: unknown, index: number): ManagedCourse {
 
 async function getCoursesFromEndpoint(
   endpoint: string,
-  search?: string,
+  filters?: { search?: string; price?: string; level?: string },
 ): Promise<ManagedCourse[]> {
   const config = getConfig();
   const url = new URL(endpoint);
-  if (search?.trim()) url.searchParams.set("search", search.trim());
+  if (filters?.search?.trim()) url.searchParams.set("search", filters.search.trim());
+  if (filters?.price && filters.price !== "all")
+    url.searchParams.set("price", filters.price);
+  if (filters?.level && filters.level !== "all")
+    url.searchParams.set("level", filters.level);
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -261,7 +265,16 @@ export function getCoursesFromApi(): Promise<ManagedCourse[]> {
 /** Search published catalog courses through the public backend endpoint. */
 export function searchCoursesFromApi(search: string): Promise<ManagedCourse[]> {
   const { base } = getConfig();
-  return getCoursesFromEndpoint(`${base}/api/courses`, search);
+  return getCoursesFromEndpoint(`${base}/api/courses`, { search });
+}
+
+export function filterCoursesFromApi(filters: {
+  search: string;
+  price: string;
+  level: string;
+}): Promise<ManagedCourse[]> {
+  const { base } = getConfig();
+  return getCoursesFromEndpoint(`${base}/api/courses`, filters);
 }
 
 /** Create a course and retain the database ID returned by the backend. */

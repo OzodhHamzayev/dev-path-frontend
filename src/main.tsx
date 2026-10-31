@@ -52,7 +52,7 @@ import { sections, lessons, type Course } from "./data";
 import { CourseProvider, usePublishedCourses } from "./courses/CourseStore";
 import { AdminCourses } from "./admin/AdminCourses";
 import { CourseEditor } from "./admin/CourseEditor";
-import { searchCoursesFromApi } from "./api/courses";
+import { filterCoursesFromApi } from "./api/courses";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -922,13 +922,15 @@ function Catalog() {
   const params = new URLSearchParams(location.search);
   const [q, setQ] = useState(params.get("q") || "");
   const [category, setCategory] = useState(params.get("category") || "all");
+  const [level, setLevel] = useState(params.get("level") || "all");
+  const [price, setPrice] = useState(params.get("price") || "all");
   const [sort, setSort] = useState("popular");
   useEffect(() => {
     let active = true;
     setSearchLoading(true);
     setSearchError("");
     const timer = window.setTimeout(() => {
-      searchCoursesFromApi(q)
+      filterCoursesFromApi({ search: q, price, level })
         .then((result) => {
           if (active) setCourses(result);
         })
@@ -948,16 +950,17 @@ function Catalog() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [q]);
+  }, [q, price, level]);
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     setQ(p.get("q") || "");
     setCategory(p.get("category") || "all");
+    setLevel(p.get("level") || "all");
+    setPrice(p.get("price") || "all");
   }, [location.search]);
   const filtered = courses
     .filter(
       (c) =>
-        c.title.toLowerCase().includes(q.toLowerCase()) &&
         (category === "all" || c.category === category),
     )
     .sort((a, b) =>
@@ -970,6 +973,8 @@ function Catalog() {
   function reset() {
     setQ("");
     setCategory("all");
+    setLevel("all");
+    setPrice("all");
     setSort("popular");
   }
   return (
@@ -1007,6 +1012,23 @@ function Catalog() {
             {[...new Set(courses.map((c) => c.category))].map((c) => (
               <option key={c}>{c}</option>
             ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Difficulty</span>
+          <select value={level} onChange={(e) => setLevel(e.target.value)}>
+            <option value="all">All levels</option>
+            {["Beginner", "Intermediate", "Advanced"].map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Price</span>
+          <select value={price} onChange={(e) => setPrice(e.target.value)}>
+            <option value="all">Any price</option>
+            <option value="free">Free courses</option>
+            <option value="paid">Paid courses</option>
           </select>
         </label>
         <button className="reset-button" onClick={reset}>
