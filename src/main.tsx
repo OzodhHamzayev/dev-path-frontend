@@ -52,6 +52,7 @@ import { sections, lessons, type Course } from "./data";
 import { CourseProvider, usePublishedCourses } from "./courses/CourseStore";
 import { AdminCourses } from "./admin/AdminCourses";
 import { CourseEditor } from "./admin/CourseEditor";
+import { searchCoursesFromApi } from "./api/courses";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -914,7 +915,9 @@ function DashboardPreview() {
   );
 }
 function Catalog() {
-  const courses = usePublishedCourses();
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [searchLoading, setSearchLoading] = useState(true);
+  const [searchError, setSearchError] = useState("");
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const [q, setQ] = useState(params.get("q") || "");
@@ -922,6 +925,32 @@ function Catalog() {
   const [level, setLevel] = useState("all");
   const [price, setPrice] = useState(params.get("price") || "all");
   const [sort, setSort] = useState("popular");
+  useEffect(() => {
+    let active = true;
+    setSearchLoading(true);
+    setSearchError("");
+    const timer = window.setTimeout(() => {
+      searchCoursesFromApi(q)
+        .then((result) => {
+          if (active) setCourses(result);
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setCourses([]);
+            setSearchError(
+              error instanceof Error ? error.message : "Courses could not be loaded.",
+            );
+          }
+        })
+        .finally(() => {
+          if (active) setSearchLoading(false);
+        });
+    }, q.trim() ? 350 : 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [q]);
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     setQ(p.get("q") || "");
@@ -1025,7 +1054,16 @@ function Catalog() {
           </select>
         </label>
       </div>
-      {filtered.length ? (
+      {searchError ? (
+        <div className="empty" role="alert">
+          <h2>Courses could not be loaded.</h2>
+          <p>{searchError}</p>
+        </div>
+      ) : searchLoading ? (
+        <div className="empty" role="status">
+          <p>Searching courses…</p>
+        </div>
+      ) : filtered.length ? (
         <div className="course-grid">
           {filtered.map((c) => (
             <CourseCard key={c.id} course={c} />

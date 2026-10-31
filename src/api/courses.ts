@@ -187,13 +187,18 @@ function mapApiCourse(value: unknown, index: number): ManagedCourse {
   };
 }
 
-export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
+async function getCoursesFromEndpoint(
+  endpoint: string,
+  search?: string,
+): Promise<ManagedCourse[]> {
   const config = getConfig();
+  const url = new URL(endpoint);
+  if (search?.trim()) url.searchParams.set("search", search.trim());
   let response: Response;
   try {
-    response = await fetch(courseCreationUrl(), {
+    response = await fetch(url.toString(), {
       method: "GET",
-      headers: authHeaders(config),
+      headers: endpoint === courseCreationUrl() ? authHeaders(config) : new Headers(),
       credentials: config.cookieAuth ? "include" : "same-origin",
     });
   } catch {
@@ -201,7 +206,7 @@ export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
       "Could not load courses from the backend. Check that it is running and allows this frontend origin through CORS.",
     );
   }
-  expireStoredToken(response, config);
+  if (endpoint === courseCreationUrl()) expireStoredToken(response, config);
 
   let body: unknown;
   let validJson = true;
@@ -247,6 +252,16 @@ export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
   if (!rows)
     throw new Error('The backend response must contain a "courses" array.');
   return rows.map(mapApiCourse);
+}
+
+export function getCoursesFromApi(): Promise<ManagedCourse[]> {
+  return getCoursesFromEndpoint(courseCreationUrl());
+}
+
+/** Search published catalog courses through the public backend endpoint. */
+export function searchCoursesFromApi(search: string): Promise<ManagedCourse[]> {
+  const { base } = getConfig();
+  return getCoursesFromEndpoint(`${base}/api/courses`, search);
 }
 
 /** Create a course and retain the database ID returned by the backend. */
