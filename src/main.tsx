@@ -56,6 +56,7 @@ import {
   filterCoursesFromApi,
   getCourseByIdFromApi,
 } from "./api/courses";
+import { createOrder } from "./api/orders";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -1081,6 +1082,8 @@ function continuePath(state: State, id: string) {
 }
 function Enroll({ course: c }: { course: Course }) {
   const { state, set, toast } = useApp();
+  const [buying, setBuying] = useState(false);
+  const nav = useNavigate();
   const enrolled = state.enrolled.includes(c.id);
   return enrolled ? (
     <Link className="button primary full" to={continuePath(state, c.id)}>
@@ -1089,16 +1092,30 @@ function Enroll({ course: c }: { course: Course }) {
   ) : (
     <button
       className="button primary full"
-      onClick={() => {
+      disabled={buying}
+      onClick={async () => {
+        if (c.price > 0) {
+          if (!state.user) {
+            toast("Please log in before buying a course.");
+            nav("/signin");
+            return;
+          }
+          setBuying(true);
+          try {
+            await createOrder(c.id);
+            toast("Order created. Complete payment to access this course.");
+          } catch (error) {
+            toast(error instanceof Error ? error.message : "Order could not be created.");
+          } finally {
+            setBuying(false);
+          }
+          return;
+        }
         set((s) => ({ ...s, enrolled: [...s.enrolled, c.id] }));
-        toast(
-          c.price > 0
-            ? "Demo purchase complete. No payment was processed."
-            : "You’re enrolled! Your next chapter starts now.",
-        );
+        toast("You’re enrolled! Your next chapter starts now.");
       }}
     >
-      {c.price > 0 ? "Buy course" : "Start learning for free"}{" "}
+      {buying ? "Creating order…" : c.price > 0 ? "Buy course" : "Start learning for free"}{" "}
       <ArrowRight size={17} />
     </button>
   );
