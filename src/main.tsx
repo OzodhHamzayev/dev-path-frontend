@@ -1102,10 +1102,14 @@ function Enroll({ course: c }: { course: Course }) {
       className="button primary full"
       onClick={() => {
         set((s) => ({ ...s, enrolled: [...s.enrolled, c.id] }));
-        toast("You’re enrolled! Your next chapter starts now.");
+        toast(
+          c.price > 0
+            ? "Demo purchase complete. No payment was processed."
+            : "You’re enrolled! Your next chapter starts now.",
+        );
       }}
     >
-      {c.price ? "Enroll in this course" : "Start learning for free"}{" "}
+      {c.price > 0 ? "Buy course" : "Start learning for free"}{" "}
       <ArrowRight size={17} />
     </button>
   );
