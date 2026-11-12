@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext, useEffect } from "react";
+import React, { useState, createContext, useContext, useEffect, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -1083,6 +1083,8 @@ function continuePath(state: State, id: string) {
 function Enroll({ course: c }: { course: Course }) {
   const { state, set, toast } = useApp();
   const [buying, setBuying] = useState(false);
+  const [orderCreated, setOrderCreated] = useState(false);
+  const idempotencyKey = useRef("");
   const nav = useNavigate();
   const enrolled = state.enrolled.includes(c.id);
   return enrolled ? (
@@ -1092,7 +1094,7 @@ function Enroll({ course: c }: { course: Course }) {
   ) : (
     <button
       className="button primary full"
-      disabled={buying}
+      disabled={buying || orderCreated}
       onClick={async () => {
         if (c.price > 0) {
           if (!state.user) {
@@ -1102,7 +1104,11 @@ function Enroll({ course: c }: { course: Course }) {
           }
           setBuying(true);
           try {
-            await createOrder(c.id);
+            if (!idempotencyKey.current) {
+              idempotencyKey.current = crypto.randomUUID();
+            }
+            await createOrder(c.id, idempotencyKey.current);
+            setOrderCreated(true);
             toast("Order created. Complete payment to access this course.");
           } catch (error) {
             toast(error instanceof Error ? error.message : "Order could not be created.");
@@ -1115,7 +1121,13 @@ function Enroll({ course: c }: { course: Course }) {
         toast("You’re enrolled! Your next chapter starts now.");
       }}
     >
-      {buying ? "Creating order…" : c.price > 0 ? "Buy course" : "Start learning for free"}{" "}
+      {buying
+        ? "Creating order…"
+        : orderCreated
+          ? "Order created"
+          : c.price > 0
+            ? "Buy course"
+            : "Start learning for free"}{" "}
       <ArrowRight size={17} />
     </button>
   );

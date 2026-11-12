@@ -10,7 +10,7 @@ function readToken() {
   }
 }
 
-export async function createOrder(courseId: string) {
+export async function createOrder(courseId: string, idempotencyKey: string) {
   const token = readToken();
   if (!token) throw new Error("Please log in before buying a course.");
   if (!/^\d+$/.test(courseId))
@@ -23,6 +23,7 @@ export async function createOrder(courseId: string) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify({ course_id: Number(courseId) }),
     });
