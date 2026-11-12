@@ -86,10 +86,9 @@ function tokenIsUsable(token: string) {
 }
 
 function clearStoredAuth() {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
-  localStorage.removeItem(AUTH_ROLE_KEY);
   sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(AUTH_USER_KEY);
+  sessionStorage.removeItem(AUTH_ROLE_KEY);
 }
 
 function normalizeRole(value: unknown): State["role"] {
@@ -139,24 +138,15 @@ const initial: State = {
 };
 function readState(): State {
   try {
-    const s = JSON.parse(localStorage.getItem("devpath") || "null");
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    const user = localStorage.getItem(AUTH_USER_KEY) || "";
-    const role = normalizeRole(
-      localStorage.getItem(AUTH_ROLE_KEY) || s?.role,
-    );
+    const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    const user = sessionStorage.getItem(AUTH_USER_KEY) || "";
+    const role = normalizeRole(sessionStorage.getItem(AUTH_ROLE_KEY));
     if (token && !tokenIsUsable(token)) clearStoredAuth();
-    return s &&
-      Array.isArray(s.saved) &&
-      Array.isArray(s.enrolled) &&
-      typeof s.progress === "object"
-      ? {
-          ...initial,
-          ...s,
-          user: token && tokenIsUsable(token) ? user || s.user || "" : "",
-          role: token && tokenIsUsable(token) ? role : "",
-        }
-      : initial;
+    return {
+      ...initial,
+      user: token && tokenIsUsable(token) ? user : "",
+      role: token && tokenIsUsable(token) ? role : "",
+    };
   } catch {
     return initial;
   }
@@ -173,10 +163,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   let token = "";
   try {
-    token =
-      localStorage.getItem(AUTH_TOKEN_KEY) ||
-      sessionStorage.getItem(AUTH_TOKEN_KEY) ||
-      "";
+    token = sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
   } catch {
     token = "";
   }
@@ -213,7 +200,6 @@ function AppContent() {
   const location = useLocation();
   const nav = useNavigate();
   useEffect(() => {
-    localStorage.setItem("devpath", JSON.stringify(state));
     document.documentElement.dataset.theme = state.theme;
   }, [state]);
   useEffect(() => {
@@ -1893,10 +1879,9 @@ if (!signup) {
     const role = normalizeRole(
       findLoginValue(body, ["role"]) || readJwtValue(token, ["role"]),
     );
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-    localStorage.setItem(AUTH_USER_KEY, displayName);
-    localStorage.setItem(AUTH_ROLE_KEY, role || "user");
-    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    sessionStorage.setItem(AUTH_USER_KEY, displayName);
+    sessionStorage.setItem(AUTH_ROLE_KEY, role || "user");
     window.dispatchEvent(new Event("devpath-auth-changed"));
     set((s) => ({ ...s, user: displayName, role: role || "user" }));
     setPassword("");

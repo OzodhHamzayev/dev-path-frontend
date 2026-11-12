@@ -34,7 +34,7 @@ function object(value: unknown): JsonObject | undefined {
 function readToken(key: string) {
   // Use an existing login token; this client never manufactures authentication.
   try {
-    const value = localStorage.getItem(key) || sessionStorage.getItem(key);
+    const value = sessionStorage.getItem(key);
     return value?.trim() || null;
   } catch {
     return null;
@@ -47,10 +47,9 @@ function expireStoredToken(
 ) {
   if (response.status !== 401 || !readToken(config.tokenKey)) return;
   try {
-    localStorage.removeItem(config.tokenKey);
-    localStorage.removeItem("devpath-auth-user");
-    localStorage.removeItem("devpath-auth-role");
     sessionStorage.removeItem(config.tokenKey);
+    sessionStorage.removeItem("devpath-auth-user");
+    sessionStorage.removeItem("devpath-auth-role");
   } finally {
     window.dispatchEvent(new Event("devpath-auth-expired"));
   }

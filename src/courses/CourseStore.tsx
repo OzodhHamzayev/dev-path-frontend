@@ -26,43 +26,9 @@ const AUTH_ROLE_KEY = "devpath-auth-role";
 
 function hasAdminSession() {
   try {
-    return localStorage.getItem(AUTH_ROLE_KEY) === "admin";
+    return sessionStorage.getItem(AUTH_ROLE_KEY) === "admin";
   } catch {
     return false;
-  }
-}
-
-function isCourse(value: unknown): value is ManagedCourse {
-  if (!value || typeof value !== "object") return false;
-  const c = value as Record<string, unknown>;
-  return (
-    [
-      "id",
-      "title",
-      "category",
-      "level",
-      "instructor",
-      "initials",
-      "color",
-      "tech",
-      "description",
-    ].every((key) => typeof c[key] === "string") &&
-    ["price", "rating", "students", "hours"].every(
-      (key) => typeof c[key] === "number" && Number.isFinite(c[key]),
-    ) &&
-    (c.status === "published" || c.status === "draft")
-  );
-}
-
-function parseCourses(raw: string | null): ManagedCourse[] | null {
-  if (raw === null) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!Array.isArray(value) || !value.every(isCourse)) return null;
-    if (new Set(value.map((c) => c.id)).size !== value.length) return null;
-    return value;
-  } catch {
-    return null;
   }
 }
 
@@ -79,13 +45,7 @@ type CourseStore = {
 const Context = createContext<CourseStore | null>(null);
 
 export function CourseProvider({ children }: { children: ReactNode }) {
-  const [courses, setCourses] = useState<ManagedCourse[]>(() => {
-    try {
-      return parseCourses(localStorage.getItem(COURSE_STORAGE_KEY)) ?? [];
-    } catch {
-      return [];
-    }
-  });
+  const [courses, setCourses] = useState<ManagedCourse[]>([]);
   const [storageError, setStorageError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -105,17 +65,7 @@ export function CourseProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         setCourses(backendCourses);
         setLoadError("");
-        try {
-          localStorage.setItem(
-            COURSE_STORAGE_KEY,
-            JSON.stringify(backendCourses),
-          );
-          setStorageError("");
-        } catch {
-          setStorageError(
-            "Courses loaded, but the browser cache could not be updated.",
-          );
-        }
+        setStorageError("");
       } catch (error) {
         if (active)
           setLoadError(
@@ -142,51 +92,18 @@ export function CourseProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("devpath-auth-changed", reloadAfterLogin);
   }, []);
 
-  useEffect(() => {
-    function sync(event: StorageEvent) {
-      if (event.key !== COURSE_STORAGE_KEY && event.key !== null) return;
-      const parsed = parseCourses(event.newValue);
-      if (parsed) setCourses(parsed);
-      else if (event.newValue === null) setCourses([]);
-    }
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
-
-  function persist(next: ManagedCourse[]) {
-    try {
-      localStorage.setItem(COURSE_STORAGE_KEY, JSON.stringify(next));
-      setCourses(next);
-      setStorageError("");
-      return true;
-    } catch {
-      setStorageError(
-        "Changes could not be saved. Allow browser storage or free up space, then try again.",
-      );
-      return false;
-    }
-  }
-
   function saveCourse(course: ManagedCourse) {
     const exists = courses.some((c) => c.id === course.id);
-    return persist(
+    setCourses(
       exists
         ? courses.map((c) => (c.id === course.id ? course : c))
         : [course, ...courses],
     );
+    return true;
   }
 
   function cacheCreatedCourse(course: ManagedCourse) {
     const next = [course, ...courses.filter((c) => c.id !== course.id)];
-    // A successful POST must not be repeated if the optional browser cache fails.
-    try {
-      localStorage.setItem(COURSE_STORAGE_KEY, JSON.stringify(next));
-      setStorageError("");
-    } catch {
-      setStorageError(
-        "The course was created on the backend, but its browser copy could not be saved. Do not submit it again; check browser storage.",
-      );
-    }
     setCourses(next);
   }
 
@@ -194,7 +111,7 @@ export function CourseProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const backendCourses = await getCoursesFromApi();
-      persist(backendCourses);
+      setCourses(backendCourses);
       setLoadError("");
     } catch (error) {
       setLoadError(
@@ -215,7 +132,10 @@ export function CourseProvider({ children }: { children: ReactNode }) {
         refreshCourses,
         saveCourse,
         cacheCreatedCourse,
-        deleteCourse: (id) => persist(courses.filter((c) => c.id !== id)),
+        deleteCourse: (id) => {
+          setCourses((current) => current.filter((course) => course.id !== id));
+          return true;
+        },
       }}
     >
       {children}
