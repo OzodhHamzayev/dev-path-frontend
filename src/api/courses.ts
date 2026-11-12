@@ -277,6 +277,55 @@ export function filterCoursesFromApi(filters: {
   return getCoursesFromEndpoint(`${base}/api/courses`, filters);
 }
 
+export async function getCourseByIdFromApi(id: string): Promise<ManagedCourse> {
+  const { base } = getConfig();
+  const url = `${base}/api/courses/${encodeURIComponent(id)}`;
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET" });
+  } catch {
+    throw new Error("Could not connect to the backend to load this course.");
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) {
+    const data = object(body);
+    const detail =
+      typeof data?.error === "string"
+        ? data.error
+        : typeof data?.message === "string"
+          ? data.message
+          : response.status === 404
+            ? "Course not found."
+            : "The backend could not load this course.";
+    throw new Error(`${detail} (HTTP ${response.status})`);
+  }
+
+  function findCourse(value: unknown, depth = 0): JsonObject | undefined {
+    if (depth > 4) return undefined;
+    const data = object(value);
+    if (!data) return undefined;
+    if ((data.id ?? data.ID) !== undefined && (data.title ?? data.Title) !== undefined)
+      return data;
+    for (const [key, nested] of Object.entries(data)) {
+      if (["course", "data", "result"].includes(key.toLowerCase())) {
+        const found = findCourse(nested, depth + 1);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  const row = findCourse(body);
+  if (!row) throw new Error("The backend response did not contain a course.");
+  return mapApiCourse(row, 0);
+}
+
 /** Create a course and retain the database ID returned by the backend. */
 export async function createCourse(
   candidate: ManagedCourse,

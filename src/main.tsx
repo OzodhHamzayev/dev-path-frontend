@@ -52,7 +52,10 @@ import { sections, lessons, type Course } from "./data";
 import { CourseProvider, usePublishedCourses } from "./courses/CourseStore";
 import { AdminCourses } from "./admin/AdminCourses";
 import { CourseEditor } from "./admin/CourseEditor";
-import { filterCoursesFromApi } from "./api/courses";
+import {
+  filterCoursesFromApi,
+  getCourseByIdFromApi,
+} from "./api/courses";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -1117,8 +1120,50 @@ function Enroll({ course: c }: { course: Course }) {
 function Details() {
   const courses = usePublishedCourses();
   const { id } = useParams();
-  const c = courses.find((c) => c.id === id);
+  const [course, setCourse] = useState<Course | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const { state } = useApp();
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    setLoading(true);
+    setLoadError("");
+    setCourse(null);
+    getCourseByIdFromApi(id)
+      .then((result) => {
+        if (active) setCourse(result);
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setLoadError(
+            error instanceof Error ? error.message : "Course could not be loaded.",
+          );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  const c = course;
+  if (loading) {
+    return (
+      <div className="container empty" role="status">
+        <p>Loading course…</p>
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="container empty" role="alert">
+        <h1>Couldn’t load this course.</h1>
+        <p>{loadError}</p>
+        <Link className="button primary" to="/courses">Back to courses</Link>
+      </div>
+    );
+  }
   if (!c) return <NotFound />;
   return (
     <>
