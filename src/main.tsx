@@ -231,6 +231,7 @@ function AppContent() {
           <Route path="/" element={<Home />} />
           <Route path="/courses" element={<Catalog />} />
           <Route path="/courses/:id" element={<Details />} />
+          <Route path="/checkout/:id" element={<DemoCheckout />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/learn/:id/:lesson" element={<Workspace />} />
           <Route path="/signin" element={<Auth key="signin" />} />
@@ -1109,7 +1110,7 @@ function Enroll({ course: c }: { course: Course }) {
             }
             await createOrder(c.id, idempotencyKey.current);
             setOrderCreated(true);
-            toast("Order created. Complete payment to access this course.");
+            nav(`/checkout/${c.id}`);
           } catch (error) {
             toast(error instanceof Error ? error.message : "Order could not be created.");
           } finally {
@@ -1358,6 +1359,93 @@ function Details() {
         </div>
       </section>
     </>
+  );
+}
+
+function DemoCheckout() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { state, set, toast } = useApp();
+  const [course, setCourse] = useState<Course | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
+  const [expiry, setExpiry] = useState("12/30");
+  const [cvc, setCvc] = useState("123");
+
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    getCourseByIdFromApi(id)
+      .then((value) => {
+        if (active) setCourse(value);
+      })
+      .catch((cause: unknown) => {
+        if (active)
+          setError(cause instanceof Error ? cause.message : "Course could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  function submitDemoPayment(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (cardNumber.replace(/\s/g, "") !== "4242424242424242" || expiry !== "12/30" || cvc !== "123") {
+      setError("Use the displayed demo card details. Real card details are not accepted.");
+      return;
+    }
+    if (!course) return;
+    set((current) => ({
+      ...current,
+      enrolled: current.enrolled.includes(course.id)
+        ? current.enrolled
+        : [...current.enrolled, course.id],
+    }));
+    toast("Demo payment complete. No real payment was processed.");
+    nav(`/courses/${course.id}`);
+  }
+
+  if (loading) return <div className="container empty" role="status"><p>Loading checkout…</p></div>;
+  if (!course) return <div className="container empty" role="alert"><h1>Checkout unavailable.</h1><p>{error || "Course not found."}</p><Link className="button primary" to="/courses">Back to courses</Link></div>;
+
+  return (
+    <section className="container demo-checkout page">
+      <div className="demo-checkout-card">
+        <span className="eyebrow">DEMO CHECKOUT</span>
+        <h1>Complete your course order</h1>
+        <p className="page-intro">This training checkout does not process payments or send card data anywhere.</p>
+        <div className="demo-order-summary">
+          <span>{course.title}</span>
+          <strong>${course.price.toFixed(2)}</strong>
+        </div>
+        <div className="demo-card-notice" role="note">
+          Use only this test card: <b>4242 4242 4242 4242</b>, expiry <b>12/30</b>, CVC <b>123</b>. Do not enter a real card.
+        </div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <form className="demo-payment-form" onSubmit={submitDemoPayment}>
+          <label>
+            Test card number
+            <input inputMode="numeric" autoComplete="off" value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} required />
+          </label>
+          <div className="demo-payment-row">
+            <label>
+              Expiry
+              <input autoComplete="off" placeholder="MM/YY" value={expiry} onChange={(event) => setExpiry(event.target.value)} required />
+            </label>
+            <label>
+              CVC
+              <input inputMode="numeric" autoComplete="off" value={cvc} onChange={(event) => setCvc(event.target.value)} required />
+            </label>
+          </div>
+          <button className="button primary full" type="submit">Complete demo purchase · ${course.price.toFixed(2)}</button>
+        </form>
+        <button className="demo-checkout-cancel" onClick={() => nav(`/courses/${course.id}`)}>Cancel and return to course</button>
+      </div>
+    </section>
   );
 }
 function Curriculum({

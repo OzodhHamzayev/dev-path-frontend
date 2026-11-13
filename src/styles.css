@@ -3243,3 +3243,105 @@ footer {
     scroll-behavior: auto !important;
   }
 }
+.demo-checkout {
+  display: grid;
+  place-items: start center;
+  min-height: 70vh;
+}
+
+.demo-checkout-card {
+  width: min(100%, 560px);
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid var(--border, #344156);
+  border-radius: 24px;
+  background: var(--surface, #222e40);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 16%);
+}
+
+.demo-checkout-card h1 {
+  margin: 10px 0;
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+}
+
+.demo-checkout-card .page-intro {
+  margin-bottom: 24px;
+}
+
+.demo-order-summary,
+.demo-payment-row {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.demo-order-summary {
+  margin: 22px 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--border, #344156);
+}
+
+.demo-card-notice {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid rgb(131 197 179 / 38%);
+  border-radius: 14px;
+  background: rgb(131 197 179 / 9%);
+  color: var(--text-secondary, #abb6c8);
+  line-height: 1.55;
+}
+
+.demo-card-notice b {
+  color: var(--text-primary, #e6eaf0);
+  white-space: nowrap;
+}
+
+.demo-payment-form {
+  display: grid;
+  gap: 16px;
+}
+
+.demo-payment-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary, #e6eaf0);
+  font-size: 0.92rem;
+}
+
+.demo-payment-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--border, #344156);
+  border-radius: 12px;
+  background: var(--background, #151b26);
+  color: var(--text-primary, #e6eaf0);
+}
+
+.demo-payment-form input:focus-visible,
+.demo-checkout-cancel:focus-visible {
+  outline: 2px solid var(--accent, #a89be8);
+  outline-offset: 2px;
+}
+
+.demo-payment-row > label {
+  flex: 1;
+}
+
+.demo-checkout-cancel {
+  display: block;
+  margin: 18px auto 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #abb6c8);
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .demo-checkout-card {
+    padding: 22px 18px;
+  }
+
+  .demo-card-notice b {
+    white-space: normal;
+  }
+}
