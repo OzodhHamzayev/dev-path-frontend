@@ -1388,8 +1388,8 @@ function DemoCheckout() {
       sum += digit;
       doubleDigit = !doubleDigit;
     }
-    if (digits.length < 12 || digits.length > 19 || sum % 10 !== 0) {
-      setError("Enter a card number with a valid format. This demo cannot check whether it has funds.");
+    if (digits.length !== 16 || sum % 10 !== 0) {
+      setError("Enter a valid 16-digit card number. This demo cannot check whether it has funds.");
       return;
     }
     const match = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(expiry);
@@ -1404,8 +1404,8 @@ function DemoCheckout() {
       setError("This card expiry date has passed.");
       return;
     }
-    if (!/^\d{3,4}$/.test(cvc)) {
-      setError("Enter a 3 or 4 digit CVC.");
+    if (!/^\d{3}$/.test(cvc)) {
+      setError("CVC must contain exactly 3 digits.");
       return;
     }
     if (!course || orderPending) return;
@@ -1453,17 +1453,23 @@ function DemoCheckout() {
         {orderPending && <p className="demo-card-notice" role="status">Backend order was created as pending. No payment was processed, so this course is not unlocked.</p>}
         <form className="demo-payment-form" onSubmit={submitDemoPayment}>
           <label>
-            Card number (format check only)
-            <input inputMode="numeric" autoComplete="off" maxLength={23} value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} required disabled={submitting || orderPending} />
+            Card number
+            <input inputMode="numeric" autoComplete="off" maxLength={19} value={cardNumber} onChange={(event) => {
+              const digits = event.target.value.replace(/\D/g, "").slice(0, 16);
+              setCardNumber(digits.match(/.{1,4}/g)?.join(" ") || "");
+            }} required disabled={submitting || orderPending} />
           </label>
           <div className="demo-payment-row">
             <label>
               Expiry
-              <input autoComplete="off" placeholder="MM/YY" maxLength={5} value={expiry} onChange={(event) => setExpiry(event.target.value)} required disabled={submitting || orderPending} />
+              <input inputMode="numeric" autoComplete="off" placeholder="MM/YY" maxLength={5} value={expiry} onChange={(event) => {
+                const digits = event.target.value.replace(/\D/g, "").slice(0, 4);
+                setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
+              }} required disabled={submitting || orderPending} />
             </label>
             <label>
               CVC
-              <input inputMode="numeric" autoComplete="off" maxLength={4} value={cvc} onChange={(event) => setCvc(event.target.value)} required disabled={submitting || orderPending} />
+              <input inputMode="numeric" autoComplete="off" maxLength={3} value={cvc} onChange={(event) => setCvc(event.target.value.replace(/\D/g, "").slice(0, 3))} required disabled={submitting || orderPending} />
             </label>
           </div>
           {!orderPending && <button className="button primary full" type="submit" disabled={submitting}>{submitting ? "Creating order…" : `Complete demo purchase · $${course.price.toFixed(2)}`}</button>}
