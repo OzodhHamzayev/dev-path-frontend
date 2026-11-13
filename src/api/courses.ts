@@ -261,6 +261,12 @@ export function getCoursesFromApi(): Promise<ManagedCourse[]> {
   return getCoursesFromEndpoint(courseCreationUrl());
 }
 
+/** Load the public course catalog without requiring an admin session. */
+export function getPublicCoursesFromApi(): Promise<ManagedCourse[]> {
+  const { base } = getConfig();
+  return getCoursesFromEndpoint(`${base}/api/courses`);
+}
+
 /** Search published catalog courses through the public backend endpoint. */
 export function searchCoursesFromApi(search: string): Promise<ManagedCourse[]> {
   const { base } = getConfig();

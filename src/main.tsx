@@ -55,8 +55,10 @@ import { CourseEditor } from "./admin/CourseEditor";
 import {
   filterCoursesFromApi,
   getCourseByIdFromApi,
+  getPublicCoursesFromApi,
 } from "./api/courses";
 import { confirmDemoOrder, createOrder } from "./api/orders";
+import { getMyEnrollmentCourseIds } from "./api/enrollments";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -65,6 +67,8 @@ type State = {
   user: string;
   role: "user" | "admin" | "";
   theme: string;
+  enrollmentLoading: boolean;
+  enrollmentError: string;
 };
 const AUTH_TOKEN_KEY = "token";
 const AUTH_USER_KEY = "devpath-auth-user";
@@ -136,6 +140,8 @@ const initial: State = {
   user: "",
   role: "",
   theme: "midnight",
+  enrollmentLoading: false,
+  enrollmentError: "",
 };
 function readState(): State {
   try {
@@ -213,9 +219,71 @@ function AppContent() {
     }
   }, [message]);
   useEffect(() => {
+    let active = true;
+    async function loadEnrollments() {
+      let token = "";
+      try {
+        token = sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+      } catch {
+        token = "";
+      }
+      if (!token) {
+        if (active) {
+          set((current) => ({
+            ...current,
+            enrolled: [],
+            enrollmentLoading: false,
+            enrollmentError: "",
+          }));
+        }
+        return;
+      }
+
+      if (active)
+        set((current) => ({ ...current, enrollmentLoading: true, enrollmentError: "" }));
+      try {
+        const courseIds = await getMyEnrollmentCourseIds();
+        if (active)
+          set((current) => ({
+            ...current,
+            enrolled: courseIds,
+            enrollmentLoading: false,
+            enrollmentError: "",
+          }));
+      } catch (error) {
+        if (active)
+          set((current) => ({
+            ...current,
+            enrolled: [],
+            enrollmentLoading: false,
+            enrollmentError:
+              error instanceof Error
+                ? error.message
+                : "Could not load your enrollments.",
+          }));
+      }
+    }
+
+    void loadEnrollments();
+    window.addEventListener("devpath-auth-changed", loadEnrollments);
+    window.addEventListener("devpath-enrollments-refresh", loadEnrollments);
+    return () => {
+      active = false;
+      window.removeEventListener("devpath-auth-changed", loadEnrollments);
+      window.removeEventListener("devpath-enrollments-refresh", loadEnrollments);
+    };
+  }, []);
+  useEffect(() => {
     function expireSession() {
       clearStoredAuth();
-      set((current) => ({ ...current, user: "", role: "" }));
+      set((current) => ({
+        ...current,
+        user: "",
+        role: "",
+        enrolled: [],
+        enrollmentLoading: false,
+        enrollmentError: "",
+      }));
       toast("Your session expired. Please log in again.");
       nav("/signin");
     }
@@ -1529,13 +1597,49 @@ function Curriculum({
   );
 }
 function Dashboard() {
-  const courses = usePublishedCourses();
+  const adminCourses = usePublishedCourses();
   const { state, set, toast } = useApp();
   const nav = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState("overview");
-  const enrolled = courses.filter((c) => state.enrolled.includes(c.id));
-  const saved = courses.filter((c) => state.saved.includes(c.id));
+  const [publicCourses, setPublicCourses] = useState<Course[]>(adminCourses);
+  const [coursesLoading, setCoursesLoading] = useState(true);
+  const [coursesError, setCoursesError] = useState("");
+  const [coursesRetry, setCoursesRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setCoursesLoading(true);
+    setCoursesError("");
+    getPublicCoursesFromApi()
+      .then((result) => {
+        if (active) setPublicCourses(result);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setPublicCourses([]);
+          setCoursesError(
+            error instanceof Error
+              ? error.message
+              : "Could not load course details.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setCoursesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [coursesRetry]);
+  const courseById = new Map(
+    [...publicCourses, ...adminCourses].map((course) => [course.id, course]),
+  );
+  const enrolled = state.enrolled
+    .map((id) => courseById.get(id))
+    .filter((course): course is Course => Boolean(course));
+  const saved = state.saved
+    .map((id) => courseById.get(id))
+    .filter((course): course is Course => Boolean(course));
   const completed = Object.values(state.progress).reduce(
     (n, v) => n + v.length,
     0,
@@ -1582,7 +1686,14 @@ function Dashboard() {
             <button
               onClick={() => {
                 clearStoredAuth();
-                set((s) => ({ ...s, user: "", role: "" }));
+              set((s) => ({
+                ...s,
+                user: "",
+                role: "",
+                enrolled: [],
+                enrollmentLoading: false,
+                enrollmentError: "",
+              }));
                 toast("You have been logged out.");
                 nav("/signin");
               }}
@@ -1642,7 +1753,27 @@ function Dashboard() {
           </>
         )}
         {tab !== "saved" &&
-          (enrolled.length ? (
+          (state.enrollmentLoading || coursesLoading ? (
+            <div className="empty dashboard-empty" role="status">
+              <BookOpen size={30} />
+              <p>Loading your courses…</p>
+            </div>
+          ) : state.enrollmentError || coursesError ? (
+            <div className="empty dashboard-empty" role="alert">
+              <BookOpen size={30} />
+              <h2>Your courses could not be loaded.</h2>
+              <p>{state.enrollmentError || coursesError}</p>
+              <button
+                className="button primary"
+                onClick={() => {
+                  window.dispatchEvent(new Event("devpath-enrollments-refresh"));
+                  setCoursesRetry((current) => current + 1);
+                }}
+              >
+                Try again <ArrowRight size={16} />
+              </button>
+            </div>
+          ) : enrolled.length ? (
             <div className="enrolled-list">
               {enrolled.map((c) => (
                 <article className="enrolled-course" key={c.id}>
