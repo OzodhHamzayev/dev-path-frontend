@@ -1377,19 +1377,8 @@ function DemoCheckout() {
     event.preventDefault();
     setError("");
     const digits = cardNumber.replace(/\D/g, "");
-    let sum = 0;
-    let doubleDigit = false;
-    for (let i = digits.length - 1; i >= 0; i -= 1) {
-      let digit = Number(digits[i]);
-      if (doubleDigit) {
-        digit *= 2;
-        if (digit > 9) digit -= 9;
-      }
-      sum += digit;
-      doubleDigit = !doubleDigit;
-    }
-    if (digits.length !== 16 || sum % 10 !== 0) {
-      setError("Enter a valid 16-digit card number. This demo cannot check whether it has funds.");
+    if (digits.length !== 16) {
+      setError("Enter exactly 16 digits for the demo card number.");
       return;
     }
     const match = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(expiry);
