@@ -56,7 +56,7 @@ import {
   filterCoursesFromApi,
   getCourseByIdFromApi,
 } from "./api/courses";
-import { createOrder } from "./api/orders";
+import { confirmDemoOrder, createOrder } from "./api/orders";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -1351,7 +1351,6 @@ function DemoCheckout() {
   const [expiry, setExpiry] = useState("");
   const [cvc, setCvc] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [orderPending, setOrderPending] = useState(false);
   const idempotencyKey = useRef("");
 
   useEffect(() => {
@@ -1397,7 +1396,7 @@ function DemoCheckout() {
       setError("CVC must contain exactly 3 digits.");
       return;
     }
-    if (!course || orderPending) return;
+    if (!course) return;
 
     setSubmitting(true);
     try {
@@ -1405,18 +1404,22 @@ function DemoCheckout() {
       const result = await createOrder(course.id, idempotencyKey.current);
       const data = result && typeof result === "object" ? result as Record<string, unknown> : {};
       const order = data.order && typeof data.order === "object" ? data.order as Record<string, unknown> : data;
-      if (String(order.status || "").toLowerCase() === "paid") {
-        set((current) => ({
-          ...current,
-          enrolled: current.enrolled.includes(course.id)
-            ? current.enrolled
-            : [...current.enrolled, course.id],
-        }));
-        toast("Payment confirmed. You’re enrolled in the course.");
-        nav(`/courses/${course.id}`);
-      } else {
-        setOrderPending(true);
-      }
+      const rawOrderId = order.ID ?? order.id;
+      const orderId = typeof rawOrderId === "number" || typeof rawOrderId === "string"
+        ? String(rawOrderId)
+        : "";
+      if (!/^\d+$/.test(orderId))
+        throw new Error("CreateOrder response did not include a numeric order ID.");
+
+      await confirmDemoOrder(orderId, idempotencyKey.current);
+      set((current) => ({
+        ...current,
+        enrolled: current.enrolled.includes(course.id)
+          ? current.enrolled
+          : [...current.enrolled, course.id],
+      }));
+      toast("Demo order confirmed. No real payment was processed.");
+      nav(`/courses/${course.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Order could not be created.");
     } finally {
@@ -1439,14 +1442,13 @@ function DemoCheckout() {
         </div>
         <div className="demo-card-notice" role="note">For learning only. Do not enter real payment details. The demo checks number format and expiry locally; it cannot contact a bank or confirm a payment.</div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        {orderPending && <p className="demo-card-notice" role="status">Backend order was created as pending. No payment was processed, so this course is not unlocked.</p>}
         <form className="demo-payment-form" onSubmit={submitDemoPayment}>
           <label>
             Card number
             <input inputMode="numeric" autoComplete="off" maxLength={19} value={cardNumber} onChange={(event) => {
               const digits = event.target.value.replace(/\D/g, "").slice(0, 16);
               setCardNumber(digits.match(/.{1,4}/g)?.join(" ") || "");
-            }} required disabled={submitting || orderPending} />
+            }} required disabled={submitting} />
           </label>
           <div className="demo-payment-row">
             <label>
@@ -1454,14 +1456,14 @@ function DemoCheckout() {
               <input inputMode="numeric" autoComplete="off" placeholder="MM/YY" maxLength={5} value={expiry} onChange={(event) => {
                 const digits = event.target.value.replace(/\D/g, "").slice(0, 4);
                 setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
-              }} required disabled={submitting || orderPending} />
+              }} required disabled={submitting} />
             </label>
             <label>
               CVC
-              <input inputMode="numeric" autoComplete="off" maxLength={3} value={cvc} onChange={(event) => setCvc(event.target.value.replace(/\D/g, "").slice(0, 3))} required disabled={submitting || orderPending} />
+              <input inputMode="numeric" autoComplete="off" maxLength={3} value={cvc} onChange={(event) => setCvc(event.target.value.replace(/\D/g, "").slice(0, 3))} required disabled={submitting} />
             </label>
           </div>
-          {!orderPending && <button className="button primary full" type="submit" disabled={submitting}>{submitting ? "Creating order…" : `Complete demo purchase · $${course.price.toFixed(2)}`}</button>}
+          <button className="button primary full" type="submit" disabled={submitting}>{submitting ? "Confirming demo order…" : `Complete demo purchase · $${course.price.toFixed(2)}`}</button>
         </form>
         <button className="demo-checkout-cancel" onClick={() => nav(`/courses/${course.id}`)}>Cancel and return to course</button>
       </div>
