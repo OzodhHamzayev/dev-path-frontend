@@ -69,3 +69,17 @@ npm run dev
 ```
 
 The test suite covers HTTP payload mapping, Bearer/cookie transport, server IDs, 401/403/404/409/422/500 responses, network failures, duplicate submission, Go integer validation, caching failures after successful creation, and the original admin/learning workflows. Chromium checks cover desktop/tablet/mobile layouts, the POST through a mocked API response, and native dialog Escape/focus behavior. A live request to your local Go backend has not been validated from this cloud workspace.
+
+
+## Course cover image upload
+
+The create and edit forms accept an optional JPG, PNG, or WebP file (nonempty, at most 5 MiB). Selecting a file previews it locally; discarding the selection restores the existing cover. No file is uploaded until Save/Create. Existing covers are preserved when no replacement is selected. Covers appear in admin rows, public course cards and course details; unavailable images fall back to the existing illustration.
+
+Implement this backend contract:
+
+1. `POST /api/admin/uploads` (override path with `VITE_COURSE_IMAGE_UPLOAD_PATH`). Authenticate with the same Bearer token or HttpOnly cookie as course operations. Accept `multipart/form-data` with a file part named **image**; do not expect JSON here. The browser supplies the multipart boundary.
+2. Validate authorization, actual image contents, MIME type and size server-side; browser checks are only convenience. Generate a safe unique filename, store the file and return a 2xx JSON response: `{"image_url":"/uploads/covers/unique.webp"}`. Absolute HTTP(S) URLs are also accepted; relative paths resolve against `VITE_API_BASE_URL` (default `http://localhost:8080`). Return non-2xx JSON `{"error":"..."}` on failure. Allow the frontend origin and Authorization header through CORS, including credentialed CORS when cookie mode is enabled.
+3. Existing course POST and PUT endpoints continue accepting JSON with their existing fields plus **image_url** (string). Store it with the course. If the field is omitted, preserve the existing cover on update.
+4. Include **image_url** in course list and detail GET responses (public and admin), so the cover survives reloads. Serve that URL as an image accessible to an `<img>` element; browser image requests cannot attach the application's sessionStorage Bearer token.
+
+The frontend uploads first and submits the returned URL with the course. Upload failure prevents course submission. A successful upload is reused when retrying a failed course save in the same form. Backend upload storage should clean up orphaned files after abandoned/failed course saves; replacement cleanup should happen only after successful course persistence. No backend implementation is included in this frontend change.

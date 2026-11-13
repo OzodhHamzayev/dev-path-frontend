@@ -117,6 +117,7 @@ function coursePayload(candidate: ManagedCourse) {
     rating: candidate.rating,
     duration: candidate.hours,
     instructor: candidate.instructor,
+    ...(candidate.imageUrl !== undefined ? { image_url: candidate.imageUrl } : {}),
   };
 }
 
@@ -159,6 +160,7 @@ function mapApiCourse(value: unknown, index: number): ManagedCourse {
   return {
     id,
     backendId: id,
+    imageUrl: resolveCourseImageUrl(textField(data, "image_url", "ImageURL")),
     title: textField(data, "title", "Title"),
     description: textField(data, "description", "Description"),
     category: textField(data, "category", "Category") || "Programming",
@@ -440,4 +442,60 @@ export async function deleteCourseFromApi(id: string): Promise<void> {
                 : "The backend could not delete this course.";
     throw new Error(`${detail} (HTTP ${response.status})`);
   }
+}
+
+
+export const MAX_COURSE_IMAGE_BYTES = 5 * 1024 * 1024;
+export const COURSE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+export function validateCourseImage(file: File): string {
+  if (!COURSE_IMAGE_TYPES.includes(file.type))
+    return "Choose a JPG, PNG, or WebP image.";
+  if (!file.size || file.size > MAX_COURSE_IMAGE_BYTES)
+    return "Choose an image up to 5 MB that is not empty.";
+  return "";
+}
+
+export function resolveCourseImageUrl(value: string): string | undefined {
+  if (!value.trim()) return undefined;
+  try {
+    const url = new URL(value, `${getConfig().base}/`);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Upload before saving the course; a failed upload must not submit a course. */
+export async function uploadCourseImage(file: File): Promise<string> {
+  const error = validateCourseImage(file);
+  if (error) throw new Error(error);
+  const config = getConfig();
+  const path = import.meta.env.VITE_COURSE_IMAGE_UPLOAD_PATH || "/api/admin/uploads";
+  const form = new FormData();
+  form.append("image", file);
+  let response: Response;
+  try {
+    response = await fetch(`${config.base}/${path.replace(/^\/+/, "")}`, {
+      method: "POST",
+      headers: authHeaders(config),
+      credentials: config.cookieAuth ? "include" : "same-origin",
+      body: form,
+    });
+  } catch {
+    throw new Error("Could not upload the image. Check your connection and try again.");
+  }
+  expireStoredToken(response, config);
+  let body: unknown;
+  try { body = await response.json(); } catch { body = undefined; }
+  const data = object(body);
+  if (!response.ok) {
+    const detail = typeof data?.error === "string" ? data.error
+      : typeof data?.message === "string" ? data.message
+      : "The course image could not be uploaded.";
+    throw new Error(`${detail} (HTTP ${response.status})`);
+  }
+  const imageUrl = resolveCourseImageUrl(typeof data?.image_url === "string" ? data.image_url : "");
+  if (!imageUrl) throw new Error("The upload response must include a valid image_url.");
+  return imageUrl;
 }

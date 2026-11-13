@@ -35,7 +35,7 @@ npm run preview
 
 Course enrollment is simulated and never collects payment. Authentication stores only a display name; passwords and email addresses are never saved or sent. Bookmarks, enrollment, completed lesson indices, and the selected dark ambiance are stored under `devpath` in localStorage. Clear that key to reset the demo. Both ambiance options remain dark.
 
-All course illustrations are local SVG/CSS artwork. External fonts have system fallbacks, and decorative learner photos fail gracefully. Lesson videos are honestly represented as placeholders with usable written lessons. Course metadata and testimonials are illustrative mock data. Weekly activity reflects lessons completed in the current demo, attributed to today; it is not a historical analytics service.
+Course covers can use uploaded images; courses without an image use local SVG/CSS artwork. External fonts have system fallbacks, and decorative learner photos fail gracefully. Lesson videos are honestly represented as placeholders with usable written lessons. Course metadata and testimonials are illustrative mock data. Weekly activity reflects lessons completed in the current demo, attributed to today; it is not a historical analytics service.
 
 ## Hosting
 
@@ -47,7 +47,7 @@ The admin update was checked in Chromium on desktop, tablet, and mobile widths (
 
 Open `/admin` or use **Admin** in the navigation. **Create course** sends a POST to `http://localhost:8080/api/admin/courses`. Start your Go backend first. The frontend only adds a course to its browser copy after a successful response. Backend errors are displayed in the form, and repeated submissions are blocked while a request is pending.
 
-The JSON payload contains `title`, `description`, `category`, `level`, `price`, `rating`, `duration`, and `instructor`. Frontend `hours` maps to backend `duration`. New-course price and duration use whole numbers to match the Go `int` fields described for this project; values are never silently rounded. Cover/technology/visibility remain frontend metadata until the backend supports them.
+The JSON payload contains `title`, `description`, `category`, `level`, `price`, `rating`, `duration`, and `instructor`. Frontend `hours` maps to backend `duration`. New-course price and duration use whole numbers to match the Go `int` fields described for this project; values are never silently rounded. Optional cover images upload through `POST /api/admin/uploads` as multipart field `image`; the returned `image_url` is included in course create/update JSON. The backend must store and return `image_url` in list/detail responses. See [the image upload contract](docs/admin-frontend.md#course-cover-image-upload). Technology/visibility remain frontend metadata until the backend supports them.
 
 The browser's **Published** and **Draft** selections control visibility in this browser copy. They do not enforce publication or access control on the server. Editing, publishing/unpublishing, deletion, and the course list remain browser-only until their real API routes are supplied. No update/delete routes are guessed or called.
 

@@ -24,10 +24,11 @@ import {
   type ManagedCourse,
 } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
-import { createCourse, updateCourseInApi } from "../api/courses";
+import { createCourse, updateCourseInApi, uploadCourseImage, validateCourseImage } from "../api/courses";
 import { AdminLayout } from "./AdminLayout";
 
 type Values = {
+  imageUrl: string;
   title: string;
   description: string;
   instructor: string;
@@ -40,6 +41,7 @@ type Values = {
   status: "draft" | "published";
 };
 const defaults: Values = {
+  imageUrl: "",
   title: "",
   description: "",
   instructor: "",
@@ -55,6 +57,7 @@ const defaults: Values = {
 function fromCourse(course?: ManagedCourse): Values {
   return course
     ? {
+        imageUrl: course.imageUrl || "",
         title: course.title,
         description: course.description,
         instructor: course.instructor,
@@ -95,13 +98,23 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const submitting = useRef(false);
+  const [imageFile, setImageFile] = useState<File>();
+  const [imagePreview, setImagePreview] = useState("");
+  const imageInput = useRef<HTMLInputElement>(null);
+  const uploadedImage = useRef<{ file: File; url: string } | undefined>(undefined);
+  useEffect(() => {
+    if (!imageFile) { setImagePreview(""); return; }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
   const [notice, setNotice] = useState(
     location.state?.created ? "Your course was created on the backend." : "",
   );
   const formRef = useRef<HTMLFormElement>(null);
   const { saveCourse, cacheCreatedCourse, storageError } = useCourseStore();
   const nav = useNavigate();
-  const dirty = JSON.stringify(values) !== JSON.stringify(fromCourse(course));
+  const dirty = !!imageFile || JSON.stringify(values) !== JSON.stringify(fromCourse(course));
   useEffect(() => {
     if (!dirty) return;
     function confirmExit(event: BeforeUnloadEvent) {
@@ -121,6 +134,7 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
     event.preventDefault();
     if (submitting.current) return;
     const next: Record<string, string> = {};
+    if (errors.image) next.image = errors.image;
     if (values.title.trim().length < 3)
       next.title = "Give your course a title of at least 3 characters.";
     if (values.description.trim().length < 20)
@@ -189,7 +203,25 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       rating: course?.rating ?? 0,
       students: course?.students ?? 0,
       backendId: course?.backendId,
+      imageUrl: values.imageUrl || undefined,
     };
+
+    // Keep a successful upload for retries if the later course request fails.
+    submitting.current = true;
+    setIsSaving(true);
+    try {
+      if (imageFile) {
+        const url = uploadedImage.current?.file === imageFile
+          ? uploadedImage.current.url : await uploadCourseImage(imageFile);
+        uploadedImage.current = { file: imageFile, url };
+        updated.imageUrl = url;
+      }
+    } catch (error) {
+      setErrors({ submit: error instanceof Error ? error.message : "The image could not be uploaded." });
+      submitting.current = false;
+      setIsSaving(false);
+      return;
+    }
 
     if (!course) {
       submitting.current = true;
@@ -280,9 +312,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
         <p>
           {course
             ? course.backendId || /^\d+$/.test(course.id)
-              ? "Saving changes updates this course through the backend. Cover, subject, and visibility remain in the browser copy until the backend supports them."
+              ? "Saving changes updates this course through the backend. Subject and visibility remain in the browser copy until the backend supports them."
               : "This starter course exists only in the browser, so changes stay in this demo workspace. Database courses are updated through the backend."
-            : "Create course sends your details to the backend. Cover, subject, and draft/published visibility are kept in this browser until the backend supports them."}
+            : "Create course sends your details to the backend. Subject and draft/published visibility are kept in this browser until the backend supports them."}
         </p>
       </div>
       {(notice || storageError) && (
@@ -462,6 +494,38 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
                 <p>A little personality, with room to breathe.</p>
               </div>
             </div>
+            <Field label="Course image" field="image" error={errors.image}>
+              <input
+                id="course-image"
+                ref={imageInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                aria-invalid={!!errors.image}
+                aria-describedby="course-image-hint image-error"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const error = validateCourseImage(file);
+                  setErrors((previous) => ({ ...previous, image: error, submit: "" }));
+                  if (error) { event.target.value = ""; return; }
+                  setImageFile(file);
+                  uploadedImage.current = undefined;
+                  setNotice("");
+                }}
+              />
+              <span id="course-image-hint" className="admin-field-hint">
+                JPG, PNG or WebP, up to 5 MB. Choose a new image to replace the current cover.
+              </span>
+              {imageFile && <span className="admin-field-hint">Selected: {imageFile.name}</span>}
+              {(imageFile || errors.image) && (
+                <button type="button" className="text-link" onClick={() => {
+                  setImageFile(undefined);
+                  uploadedImage.current = undefined;
+                  if (imageInput.current) imageInput.current.value = "";
+                  setErrors((previous) => ({ ...previous, image: "", submit: "" }));
+                }}>Discard selected image</button>
+              )}
+            </Field>
             <fieldset className="admin-color-field">
               <legend>Cover color</legend>
               <div>
@@ -533,6 +597,7 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
           </div>
           <div className="admin-course-preview">
             <CourseVisual
+              imageUrl={imagePreview || values.imageUrl}
               title={values.title || "Your course"}
               tech={values.tech}
               color={values.color}

@@ -488,6 +488,12 @@ function Artwork({
   course: Course;
   compact?: boolean;
 }) {
+  const [failedImage, setFailedImage] = useState<string>();
+  if (course.imageUrl && course.imageUrl !== failedImage) return (
+    <div className={`artwork ${course.color} ${compact ? "compact" : ""}`}>
+      <img className="course-cover-image" src={course.imageUrl} alt={`${course.title} cover`} onError={() => setFailedImage(course.imageUrl)} />
+    </div>
+  );
   return (
     <div
       className={`artwork ${course.color} ${compact ? "compact" : ""}`}

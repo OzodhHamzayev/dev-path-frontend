@@ -1,4 +1,5 @@
 export type Course = {
+  imageUrl?: string;
   id: string;
   title: string;
   category: string;

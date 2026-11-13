@@ -321,6 +321,7 @@ export function AdminCourses({
                       <td>
                         <div className="admin-course-cell">
                           <CourseVisual
+                            imageUrl={c.imageUrl}
                             title={c.title}
                             tech={c.tech}
                             color={c.color}

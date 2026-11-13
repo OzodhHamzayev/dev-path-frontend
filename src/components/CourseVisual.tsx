@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Code2 } from "lucide-react";
 
 export function CourseVisual({
@@ -5,12 +6,20 @@ export function CourseVisual({
   tech,
   color,
   compact = false,
+  imageUrl,
 }: {
   title: string;
   tech: string;
   color: string;
   compact?: boolean;
+  imageUrl?: string;
 }) {
+  const [failedUrl, setFailedUrl] = useState<string>();
+  if (imageUrl && imageUrl !== failedUrl) return (
+    <div className={`admin-course-visual ${color} ${compact ? "is-compact" : ""}`}>
+      <img className="course-cover-image" src={imageUrl} alt={`${title} cover`} onError={() => setFailedUrl(imageUrl)} />
+    </div>
+  );
   return (
     <div
       className={`admin-course-visual ${color} ${compact ? "is-compact" : ""}`}
