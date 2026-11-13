@@ -1083,9 +1083,6 @@ function continuePath(state: State, id: string) {
 }
 function Enroll({ course: c }: { course: Course }) {
   const { state, set, toast } = useApp();
-  const [buying, setBuying] = useState(false);
-  const [orderCreated, setOrderCreated] = useState(false);
-  const idempotencyKey = useRef("");
   const nav = useNavigate();
   const enrolled = state.enrolled.includes(c.id);
   return enrolled ? (
@@ -1095,40 +1092,21 @@ function Enroll({ course: c }: { course: Course }) {
   ) : (
     <button
       className="button primary full"
-      disabled={buying || orderCreated}
-      onClick={async () => {
+      onClick={() => {
         if (c.price > 0) {
           if (!state.user) {
             toast("Please log in before buying a course.");
             nav("/signin");
             return;
           }
-          setBuying(true);
-          try {
-            if (!idempotencyKey.current) {
-              idempotencyKey.current = crypto.randomUUID();
-            }
-            await createOrder(c.id, idempotencyKey.current);
-            setOrderCreated(true);
-            nav(`/checkout/${c.id}`);
-          } catch (error) {
-            toast(error instanceof Error ? error.message : "Order could not be created.");
-          } finally {
-            setBuying(false);
-          }
+          nav(`/checkout/${c.id}`);
           return;
         }
         set((s) => ({ ...s, enrolled: [...s.enrolled, c.id] }));
         toast("You’re enrolled! Your next chapter starts now.");
       }}
     >
-      {buying
-        ? "Creating order…"
-        : orderCreated
-          ? "Order created"
-          : c.price > 0
-            ? "Buy course"
-            : "Start learning for free"}{" "}
+      {c.price > 0 ? "Buy course" : "Start learning for free"}{" "}
       <ArrowRight size={17} />
     </button>
   );
@@ -1369,9 +1347,12 @@ function DemoCheckout() {
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
-  const [expiry, setExpiry] = useState("12/30");
-  const [cvc, setCvc] = useState("123");
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvc, setCvc] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [orderPending, setOrderPending] = useState(false);
+  const idempotencyKey = useRef("");
 
   useEffect(() => {
     if (!id) return;
@@ -1392,21 +1373,66 @@ function DemoCheckout() {
     };
   }, [id]);
 
-  function submitDemoPayment(event: React.FormEvent<HTMLFormElement>) {
+  async function submitDemoPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (cardNumber.replace(/\s/g, "") !== "4242424242424242" || expiry !== "12/30" || cvc !== "123") {
-      setError("Use the displayed demo card details. Real card details are not accepted.");
+    setError("");
+    const digits = cardNumber.replace(/\D/g, "");
+    let sum = 0;
+    let doubleDigit = false;
+    for (let i = digits.length - 1; i >= 0; i -= 1) {
+      let digit = Number(digits[i]);
+      if (doubleDigit) {
+        digit *= 2;
+        if (digit > 9) digit -= 9;
+      }
+      sum += digit;
+      doubleDigit = !doubleDigit;
+    }
+    if (digits.length < 12 || digits.length > 19 || sum % 10 !== 0) {
+      setError("Enter a card number with a valid format. This demo cannot check whether it has funds.");
       return;
     }
-    if (!course) return;
-    set((current) => ({
-      ...current,
-      enrolled: current.enrolled.includes(course.id)
-        ? current.enrolled
-        : [...current.enrolled, course.id],
-    }));
-    toast("Demo payment complete. No real payment was processed.");
-    nav(`/courses/${course.id}`);
+    const match = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(expiry);
+    if (!match) {
+      setError("Enter expiry as MM/YY.");
+      return;
+    }
+    const expiryMonth = Number(match[1]);
+    const expiryYear = 2000 + Number(match[2]);
+    const now = new Date();
+    if (expiryYear < now.getFullYear() || (expiryYear === now.getFullYear() && expiryMonth < now.getMonth() + 1)) {
+      setError("This card expiry date has passed.");
+      return;
+    }
+    if (!/^\d{3,4}$/.test(cvc)) {
+      setError("Enter a 3 or 4 digit CVC.");
+      return;
+    }
+    if (!course || orderPending) return;
+
+    setSubmitting(true);
+    try {
+      if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
+      const result = await createOrder(course.id, idempotencyKey.current);
+      const data = result && typeof result === "object" ? result as Record<string, unknown> : {};
+      const order = data.order && typeof data.order === "object" ? data.order as Record<string, unknown> : data;
+      if (String(order.status || "").toLowerCase() === "paid") {
+        set((current) => ({
+          ...current,
+          enrolled: current.enrolled.includes(course.id)
+            ? current.enrolled
+            : [...current.enrolled, course.id],
+        }));
+        toast("Payment confirmed. You’re enrolled in the course.");
+        nav(`/courses/${course.id}`);
+      } else {
+        setOrderPending(true);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Order could not be created.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (loading) return <div className="container empty" role="status"><p>Loading checkout…</p></div>;
@@ -1417,31 +1443,30 @@ function DemoCheckout() {
       <div className="demo-checkout-card">
         <span className="eyebrow">DEMO CHECKOUT</span>
         <h1>Complete your course order</h1>
-        <p className="page-intro">This training checkout does not process payments or send card data anywhere.</p>
+        <p className="page-intro">Practice the checkout form. Card details stay in this page and are never sent or saved. This demo does not charge a card or verify available funds.</p>
         <div className="demo-order-summary">
           <span>{course.title}</span>
           <strong>${course.price.toFixed(2)}</strong>
         </div>
-        <div className="demo-card-notice" role="note">
-          Use only this test card: <b>4242 4242 4242 4242</b>, expiry <b>12/30</b>, CVC <b>123</b>. Do not enter a real card.
-        </div>
+        <div className="demo-card-notice" role="note">For learning only. Do not enter real payment details. The demo checks number format and expiry locally; it cannot contact a bank or confirm a payment.</div>
         {error && <p className="form-error" role="alert">{error}</p>}
+        {orderPending && <p className="demo-card-notice" role="status">Backend order was created as pending. No payment was processed, so this course is not unlocked.</p>}
         <form className="demo-payment-form" onSubmit={submitDemoPayment}>
           <label>
-            Test card number
-            <input inputMode="numeric" autoComplete="off" value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} required />
+            Card number (format check only)
+            <input inputMode="numeric" autoComplete="off" maxLength={23} value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} required disabled={submitting || orderPending} />
           </label>
           <div className="demo-payment-row">
             <label>
               Expiry
-              <input autoComplete="off" placeholder="MM/YY" value={expiry} onChange={(event) => setExpiry(event.target.value)} required />
+              <input autoComplete="off" placeholder="MM/YY" maxLength={5} value={expiry} onChange={(event) => setExpiry(event.target.value)} required disabled={submitting || orderPending} />
             </label>
             <label>
               CVC
-              <input inputMode="numeric" autoComplete="off" value={cvc} onChange={(event) => setCvc(event.target.value)} required />
+              <input inputMode="numeric" autoComplete="off" maxLength={4} value={cvc} onChange={(event) => setCvc(event.target.value)} required disabled={submitting || orderPending} />
             </label>
           </div>
-          <button className="button primary full" type="submit">Complete demo purchase · ${course.price.toFixed(2)}</button>
+          {!orderPending && <button className="button primary full" type="submit" disabled={submitting}>{submitting ? "Creating order…" : `Complete demo purchase · $${course.price.toFixed(2)}`}</button>}
         </form>
         <button className="demo-checkout-cancel" onClick={() => nav(`/courses/${course.id}`)}>Cancel and return to course</button>
       </div>
